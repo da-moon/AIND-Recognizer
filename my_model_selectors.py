@@ -32,9 +32,7 @@ class ModelSelector(object):
         raise NotImplementedError
 
     def base_model(self, num_states):
-        # with warnings.catch_warnings():
         warnings.filterwarnings("ignore", category=DeprecationWarning)
-        # warnings.filterwarnings("ignore", category=RuntimeWarning)
         try:
             hmm_model = GaussianHMM(n_components=num_states, covariance_type="diag", n_iter=1000,
                                     random_state=self.random_state, verbose=False).fit(self.X, self.lengths)
@@ -45,13 +43,10 @@ class ModelSelector(object):
             if self.verbose:
                 print("failure on {} with {} states".format(self.this_word, num_states))
             return None
-
-
 class SelectorConstant(ModelSelector):
     """ select the model with value self.n_constant
 
     """
-
     def select(self):
         """ select based on n_constant value
 
@@ -60,38 +55,31 @@ class SelectorConstant(ModelSelector):
         best_num_components = self.n_constant
         return self.base_model(best_num_components)
 
-
 class SelectorBIC(ModelSelector):
     """ select the model with the lowest Bayesian Information Criterion(BIC) score
 
     http://www2.imm.dtu.dk/courses/02433/doc/ch6_slides.pdf
     Bayesian information criteria: BIC = -2 * logL + p * logN
     """
-
     def select(self):
-        """ select the best model for self.this_word based on
-        BIC score for n between self.min_n_components and self.max_n_components
-
-        :return: GaussianHMM object
-        """
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         scores = []
-
         for num_states in range(self.min_n_components, self.max_n_components+1):
-        
             try:
                 model = self.base_model(num_states)
                 logL = model.score(self.X, self.lengths)
                 logN = np.log(len(self.X))
                 d = model.n_features
                 p = num_states ** 2 + 2 * d * num_states - 1
-                BIC = -2.0 * logL + p * logN
-                scores.append([BIC, model])
-
+                result = -2.0 * logL + p * logN
+                scores.append([result, model])
             except:
                 pass
-        minimum_scores = min(scores, key=lambda x: x[0])
-        return minimum_scores[1] if scores else self.n_constant
+        if scores :
+            minimum = min(scores, key = lambda x : x[0])
+            return minimum[1] 
+        else :
+            return self.n_constant        
 
 class SelectorDIC(ModelSelector):
     ''' select best model based on Discriminative Information Criterion
@@ -102,49 +90,52 @@ class SelectorDIC(ModelSelector):
     https://pdfs.semanticscholar.org/ed3d/7c4a5f607201f3848d4c02dd9ba17c791fc2.pdf
     DIC = log(P(X(i)) - 1/(M-1)SUM(log(P(X(all but i))
     '''
-
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
         scores = []
-        for i in range(self.min_n_components, self.max_n_components+1):
+        for num_states in range(self.min_n_components, self.max_n_components+1):
             try:
-                model = self.base_model(i)
+                model = self.base_model(num_states)
                 scores_temp = []
                 for word, (X, lengths) in self.hwords.items():
                     if word != self.this_word:
                         scores_temp.append(model.score(X, lengths))
-                result = ([model.score(self.X, self.lengths) -
-                            np.mean(scores_temp), model])
+                result = [model.score(self.X, self.lengths) - np.mean(scores_temp), model]
                 scores.append(result)
             except:
                 pass
-        maximum_scores = max(scores, key=lambda x: x[0])
-        return maximum_scores[1] if scores else self.n_constant
+        if scores :
+            maximum = max(scores, key = lambda x : x[0])
+            return maximum[1] 
+        else :
+            return self.n_constant
 
 class SelectorCV(ModelSelector):
     ''' select best model based on average log Likelihood of cross-validation folds
+
     '''
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
+        split_method = KFold()
         likelihoods = []
         scores = []
-        for number_states in range(self.min_n_components, self.max_n_components+1):
+        for num_states in range(self.min_n_components, self.max_n_components+1):        
             try:
-                if len(self.sequences) > 2:
-                    for training_index, test_index in KFold().split(self.sequences):
-
-                        self.X, self.lengths = combine_sequences(
-                            training_index, self.sequences)
-                        X_test, lengths_test = combine_sequences(
-                            test_index, self.sequences)
-                        model = self.base_model(number_states)
+                if len(self.sequences)> 2:
+                    for train_index, test_index in split_method.split(self.sequences):
+                        self.X, self.lengths = combine_sequences(train_index, self.sequences)
+                        X_test, lengths_test = combine_sequences(test_index, self.sequences)
+                        model = self.base_model(num_states)
                         likelihood = model.score(X_test, lengths_test)
                         likelihoods.append(likelihood)
                 else:
-                    model = self.base_model(number_states)
+                    model = self.base_model(num_states)
                     likelihoods = model.score(self.X, self.lengths)
                 scores.append([np.mean(likelihoods), model])
             except:
                 pass
-        maximum_scores = max(scores, key=lambda x: x[0])
-        return maximum_scores[1] if scores else self.n_constant
+        if scores :
+            maximum = max(scores, key = lambda x : x[0])
+            return maximum[1] 
+        else :
+            return self.n_constant
